@@ -23,7 +23,6 @@ func NewHandler(svc *service.Service) *Handler {
 
 func (h *Handler) RegisterRoutes(server *gin.Engine) {
 	server.POST("/upload", h.Upload)
-	server.POST("/export", h.ExportCSV)
 }
 
 func (h *Handler) Upload(ctx *gin.Context) {
@@ -52,9 +51,9 @@ func (h *Handler) Upload(ctx *gin.Context) {
 		return
 	}
 	fmt.Println(columnMapping)
-
+	sheetName := columnMapping.SheetName
 	//调用 service 进行处理
-	results, err := h.svc.ValidateExcel(ctx, tempFilePath, columnMapping)
+	results, err := h.svc.ValidateExcel(ctx, tempFilePath, sheetName, columnMapping)
 	if err != nil {
 		ctx.JSON(http.StatusOK, gin.H{"error": "文件处理失败：" + err.Error()})
 		return
@@ -62,26 +61,4 @@ func (h *Handler) Upload(ctx *gin.Context) {
 	//返回验证结果（JSON 格式）
 	ctx.JSON(http.StatusOK, results)
 	fmt.Println(results)
-}
-
-// ExportCSV 导出验证结果为 CSV 文件
-func (h *Handler) ExportCSV(ctx *gin.Context) {
-	// 定义一个 JSON 数组接收验证结果
-	var results []domain.ValidationResult
-
-	// 从请求中解析 JSON 数据
-	if err := ctx.BindJSON(&results); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "无效的 JSON 数据"})
-		return
-	}
-
-	// 调用服务层生成 CSV 文件
-	filePath, err := h.svc.ExportValidationResults(results)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "CSV 文件导出失败：" + err.Error()})
-		return
-	}
-
-	// 返回生成的文件
-	ctx.File(filePath)
 }

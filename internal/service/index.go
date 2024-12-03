@@ -3,11 +3,9 @@ package service
 import (
 	"context"
 	"demo-1/internal/domain"
-	"encoding/csv"
 	"fmt"
 	"github.com/xuri/excelize/v2"
-	"os"
-	"path/filepath"
+	"strings"
 )
 
 type Service struct {
@@ -17,7 +15,7 @@ func NewService() *Service {
 	return &Service{}
 }
 
-func (svc *Service) ValidateExcel(ctx context.Context, path string, columnMapping domain.ColumnMapping) ([]domain.ValidationResult, error) {
+func (svc *Service) ValidateExcel(ctx context.Context, path string, sheetName string, columnMapping domain.ColumnMapping) ([]domain.ValidationResult, error) {
 	// 打开文件
 	f, err := excelize.OpenFile(path)
 	if err != nil {
@@ -25,8 +23,8 @@ func (svc *Service) ValidateExcel(ctx context.Context, path string, columnMappin
 	}
 	defer f.Close()
 
-	// 获取 Sheet1 的所有行
-	rows, err := f.GetRows("Sheet1")
+	// 获取指定工作表的所有行
+	rows, err := f.GetRows(sheetName)
 	if err != nil {
 		return nil, fmt.Errorf("无法读取表格数据: %v", err)
 	}
@@ -60,58 +58,33 @@ func (svc *Service) ValidateExcel(ctx context.Context, path string, columnMappin
 			result.Email = row[columnMapping.EmailCol]
 		}
 		// 验证每一列数据
-		if !domain.IsValidIDCard(result.IDCard) {
-			result.ValidationMsg = "身份证号码无效"
-		} else if !domain.IsValidPhone(result.Phone) {
-			result.ValidationMsg = "手机号格式不正确"
-		} else if !domain.IsValidEmail(result.Email) {
-			result.ValidationMsg = "邮箱格式不正确"
-		} else {
+		var validationErrors []string
+
+		if err := domain.IsValidIDCard(result.IDCard); err != nil {
+			validationErrors = append(validationErrors, "身份证号码无效")
+		}
+
+		if err := domain.IsValidDisability(result.DisabilityNo); err != nil {
+			validationErrors = append(validationErrors, "残疾证号码无效")
+		}
+
+		if err := domain.IsValidPhone(result.Phone); err != nil {
+			validationErrors = append(validationErrors, "手机号格式不正确")
+		}
+
+		if err := domain.IsValidEmail(result.Email); err != nil {
+			validationErrors = append(validationErrors, "邮箱格式不正确")
+		}
+
+		if len(validationErrors) == 0 {
 			result.ValidationMsg = "验证通过"
+		} else {
+			// 将所有错误信息拼接成一个字符串
+			result.ValidationMsg = strings.Join(validationErrors, "; ")
 		}
 
 		// 将结果追加到结果集
 		results = append(results, result)
 	}
 	return results, nil
-}
-
-// ExportValidationResults 将验证结果导出为 CSV 文件
-func (svc *Service) ExportValidationResults(results []domain.ValidationResult) (string, error) {
-	// 确保根目录下的 tmp 文件夹存在
-	tmpDir := "./tmp"
-	if err := os.MkdirAll(tmpDir, os.ModePerm); err != nil {
-		return "", fmt.Errorf("无法创建 tmp 目录: %v", err)
-	}
-
-	// 文件路径
-	filePath := filepath.Join(tmpDir, "validation_results.csv")
-
-	// 创建文件
-	file, err := os.Create(filePath)
-	if err != nil {
-		return "", fmt.Errorf("无法创建 CSV 文件: %v", err)
-	}
-	defer file.Close()
-
-	// 创建 CSV 写入器
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
-	// 写入表头
-	writer.Write([]string{"行号", "身份证号", "残疾证号码", "手机号", "邮箱", "验证信息"})
-
-	// 写入数据
-	for _, result := range results {
-		writer.Write([]string{
-			fmt.Sprintf("%d", result.Row),
-			result.IDCard,
-			result.DisabilityNo,
-			result.Phone,
-			result.Email,
-			result.ValidationMsg,
-		})
-	}
-
-	return filePath, nil
 }
